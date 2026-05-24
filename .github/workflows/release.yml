@@ -1,0 +1,60 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Restore
+        run: dotnet restore NetworkTrayApp.csproj
+
+      - name: Publish
+        run: >
+          dotnet publish NetworkTrayApp.csproj
+          -c Release
+          -r win-x64
+          --self-contained true
+          -p:PublishSingleFile=true
+          -p:IncludeNativeLibrariesForSelfExtract=true
+          -p:DebugType=None
+
+      - name: Package release
+        shell: powershell
+        run: |
+          $publishPath = "bin\Release\net10.0-windows\win-x64\publish"
+          $zipPath = "NetworkTrayApp-win-x64.zip"
+          $hashPath = "NetworkTrayApp-win-x64.sha256.txt"
+
+          if (Test-Path $zipPath) { Remove-Item $zipPath -Force }
+          if (Test-Path $hashPath) { Remove-Item $hashPath -Force }
+
+          Compress-Archive -Path (Join-Path $publishPath '*') -DestinationPath $zipPath -Force
+          $hash = Get-FileHash $zipPath -Algorithm SHA256
+          "$($hash.Hash)  $zipPath" | Out-File -FilePath $hashPath -Encoding ascii
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            NetworkTrayApp-win-x64.zip
+            NetworkTrayApp-win-x64.sha256.txt
+          generate_release_notes: true
